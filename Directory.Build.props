@@ -1,19 +1,28 @@
 <Project>
 
   <PropertyGroup>
-    <Version>3.6.4</Version>
+    <Version>0.0.0-dev</Version>
     <Company>Tyrrrz</Company>
     <Copyright>Copyright (C) Oleksii Holub</Copyright>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <WarningsAsErrors>nullable</WarningsAsErrors>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <CheckEolTargetFramework>false</CheckEolTargetFramework>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <!-- Disable nullability warnings on older frameworks because there is no nullability info for BCL -->
-  <PropertyGroup Condition="'$(TargetFramework)' == 'netstandard2.0' OR '$(TargetFramework)' == 'net462'">
+  <PropertyGroup Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'netstandard2.1')) != true">
     <Nullable>annotations</Nullable>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Authors>$(Company)</Authors>
+    <Description>Library for interacting with external command-line interfaces</Description>
+    <PackageTags>yshell pipe command line executable interface wrapper standard input output error arguments net core</PackageTags>
+    <PackageProjectUrl>https://github.com/Tyrrrz/CliWrap</PackageProjectUrl>
+    <PackageReleaseNotes>https://github.com/Tyrrrz/CliWrap/releases</PackageReleaseNotes>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
 </Project>

@@ -20,86 +20,98 @@ public abstract partial class PipeTarget
     /// Reads the binary content from the origin stream and pushes it into the pipe.
     /// Origin stream represents the process's standard output or standard error stream.
     /// </summary>
-    public abstract Task CopyFromAsync(Stream origin, CancellationToken cancellationToken = default);
+    public abstract Task CopyFromAsync(
+        Stream origin,
+        CancellationToken cancellationToken = default
+    );
 }
 
-file class AnonymousPipeTarget : PipeTarget
+public partial class PipeTarget
 {
-    private readonly Func<Stream, CancellationToken, Task> _copyFromAsync;
-
-    public AnonymousPipeTarget(Func<Stream, CancellationToken, Task> copyFromAsync) =>
-        _copyFromAsync = copyFromAsync;
-
-    public override async Task CopyFromAsync(Stream origin, CancellationToken cancellationToken = default) =>
-        await _copyFromAsync(origin, cancellationToken).ConfigureAwait(false);
-}
-
-file class AggregatePipeTarget : PipeTarget
-{
-    public IReadOnlyList<PipeTarget> Targets { get; }
-
-    public AggregatePipeTarget(IReadOnlyList<PipeTarget> targets) => Targets = targets;
-
-    public override async Task CopyFromAsync(Stream origin, CancellationToken cancellationToken = default)
+    private class AnonymousPipeTarget(Func<Stream, CancellationToken, Task> copyFromAsync)
+        : PipeTarget
     {
-        // Cancellation to abort the pipe if any of the underlying targets fail
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        public override async Task CopyFromAsync(
+            Stream origin,
+            CancellationToken cancellationToken = default
+        ) => await copyFromAsync(origin, cancellationToken).ConfigureAwait(false);
+    }
 
-        // Create a separate sub-stream for each target
-        var targetSubStreams = new Dictionary<PipeTarget, SimplexStream>();
-        foreach (var target in Targets)
-            targetSubStreams[target] = new SimplexStream();
+    private class AggregatePipeTarget(IReadOnlyList<PipeTarget> targets) : PipeTarget
+    {
+        public IReadOnlyList<PipeTarget> Targets { get; } = targets;
 
-        try
+        public override async Task CopyFromAsync(
+            Stream origin,
+            CancellationToken cancellationToken = default
+        )
         {
-            // Start piping in the background
-            var readingTask = Task.WhenAll(targetSubStreams.Select(async targetSubStream =>
-            {
-                var (target, subStream) = targetSubStream;
+            // Cancellation to abort the pipe if any of the underlying targets fail
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-                try
-                {
-                    // ReSharper disable once AccessToDisposedClosure
-                    await target.CopyFromAsync(subStream, cts.Token).ConfigureAwait(false);
-                }
-                catch
-                {
-                    // Abort the operation if any of the targets fail
-                    // ReSharper disable once AccessToDisposedClosure
-                    cts.Cancel();
-
-                    throw;
-                }
-            }));
+            // Create a separate sub-stream for each target
+            var targetSubStreams = new Dictionary<PipeTarget, SimplexStream>();
+            foreach (var target in Targets)
+                targetSubStreams[target] = new SimplexStream();
 
             try
             {
-                // Read from the master stream and replicate the data to each sub-stream
-                using var buffer = MemoryPool<byte>.Shared.Rent(BufferSizes.Stream);
-                while (true)
+                // Start piping in the background
+                var readingTask = Task.WhenAll(
+                    targetSubStreams.Select(async targetSubStream =>
+                    {
+                        var (target, subStream) = targetSubStream;
+
+                        try
+                        {
+                            // ReSharper disable once AccessToDisposedClosure
+                            await target.CopyFromAsync(subStream, cts.Token).ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                            // Abort the operation if any of the targets fail
+                            // ReSharper disable once AccessToDisposedClosure
+                            await cts.CancelAsync();
+
+                            throw;
+                        }
+                    })
+                );
+
+                try
                 {
-                    var bytesRead = await origin.ReadAsync(buffer.Memory, cts.Token).ConfigureAwait(false);
-                    if (bytesRead <= 0)
-                        break;
+                    // Read from the master stream and replicate the data to each sub-stream
+                    using var buffer = MemoryPool<byte>.Shared.Rent(BufferSizes.Stream);
+                    while (true)
+                    {
+                        var bytesRead = await origin
+                            .ReadAsync(buffer.Memory, cts.Token)
+                            .ConfigureAwait(false);
 
+                        if (bytesRead <= 0)
+                            break;
+
+                        foreach (var (_, subStream) in targetSubStreams)
+                            await subStream
+                                .WriteAsync(buffer.Memory[..bytesRead], cts.Token)
+                                .ConfigureAwait(false);
+                    }
+
+                    // Report that transmission is complete
                     foreach (var (_, subStream) in targetSubStreams)
-                        await subStream.WriteAsync(buffer.Memory[..bytesRead], cts.Token).ConfigureAwait(false);
+                        await subStream.ReportCompletionAsync(cts.Token).ConfigureAwait(false);
                 }
-
-                // Report that transmission is complete
-                foreach (var (_, subStream) in targetSubStreams)
-                    await subStream.ReportCompletionAsync(cts.Token).ConfigureAwait(false);
+                finally
+                {
+                    // Wait for all targets to finish and propagate potential exceptions
+                    await readingTask.ConfigureAwait(false);
+                }
             }
             finally
             {
-                // Wait for all targets to finish and propagate potential exceptions
-                await readingTask.ConfigureAwait(false);
+                foreach (var (_, subStream) in targetSubStreams)
+                    await subStream.ToAsyncDisposable().DisposeAsync().ConfigureAwait(false);
             }
-        }
-        finally
-        {
-            foreach (var (_, subStream) in targetSubStreams)
-                await subStream.ToAsyncDisposable().DisposeAsync().ConfigureAwait(false);
         }
     }
 }
@@ -118,11 +130,13 @@ public partial class PipeTarget
     /// This may be undesirable in certain situations, in which case it's recommended to pipe to a
     /// null stream explicitly using <see cref="ToStream(Stream)" /> with <see cref="Stream.Null" />.
     /// </remarks>
-    public static PipeTarget Null { get; } = Create((_, cancellationToken) =>
-         !cancellationToken.IsCancellationRequested
-            ? Task.CompletedTask
-            : Task.FromCanceled(cancellationToken)
-    );
+    public static PipeTarget Null { get; } =
+        Create(
+            (_, cancellationToken) =>
+                !cancellationToken.IsCancellationRequested
+                    ? Task.CompletedTask
+                    : Task.FromCanceled(cancellationToken)
+        );
 
     /// <summary>
     /// Creates an anonymous pipe target with the <see cref="CopyFromAsync(Stream, CancellationToken)" /> method
@@ -135,18 +149,23 @@ public partial class PipeTarget
     /// Creates an anonymous pipe target with the <see cref="CopyFromAsync(Stream, CancellationToken)" /> method
     /// implemented by the specified synchronous delegate.
     /// </summary>
-    public static PipeTarget Create(Action<Stream> handlePipe) => Create((origin, _) =>
-    {
-        handlePipe(origin);
-        return Task.CompletedTask;
-    });
+    public static PipeTarget Create(Action<Stream> handlePipe) =>
+        Create(
+            (origin, _) =>
+            {
+                handlePipe(origin);
+                return Task.CompletedTask;
+            }
+        );
 
     /// <summary>
     /// Creates a pipe target that writes to the specified stream.
     /// </summary>
-    public static PipeTarget ToStream(Stream stream, bool autoFlush) => Create(async (origin, cancellationToken) =>
-        await origin.CopyToAsync(stream, autoFlush, cancellationToken).ConfigureAwait(false)
-    );
+    public static PipeTarget ToStream(Stream stream, bool autoFlush) =>
+        Create(
+            async (origin, cancellationToken) =>
+                await origin.CopyToAsync(stream, autoFlush, cancellationToken).ConfigureAwait(false)
+        );
 
     /// <summary>
     /// Creates a pipe target that writes to the specified stream.
@@ -157,94 +176,123 @@ public partial class PipeTarget
     /// <summary>
     /// Creates a pipe target that writes to the specified file.
     /// </summary>
-    public static PipeTarget ToFile(string filePath) => Create(async (origin, cancellationToken) =>
-    {
-        var target = File.Create(filePath);
-        await using (target.ToAsyncDisposable())
-            await origin.CopyToAsync(target, cancellationToken).ConfigureAwait(false);
-    });
+    public static PipeTarget ToFile(string filePath) =>
+        Create(
+            async (origin, cancellationToken) =>
+            {
+                var target = File.Create(filePath);
+                await using (target.ToAsyncDisposable())
+                    await origin.CopyToAsync(target, cancellationToken).ConfigureAwait(false);
+            }
+        );
 
     /// <summary>
     /// Creates a pipe target that writes to the specified string builder.
     /// </summary>
     public static PipeTarget ToStringBuilder(StringBuilder stringBuilder, Encoding encoding) =>
-        Create(async (origin, cancellationToken) =>
-        {
-            using var reader = new StreamReader(origin, encoding, false, BufferSizes.StreamReader, true);
-            using var buffer = MemoryPool<char>.Shared.Rent(BufferSizes.StreamReader);
-
-            while (true)
+        Create(
+            async (origin, cancellationToken) =>
             {
-                var charsRead = await reader.ReadAsync(buffer.Memory, cancellationToken).ConfigureAwait(false);
-                if (charsRead <= 0)
-                    break;
+                using var reader = new StreamReader(
+                    origin,
+                    encoding,
+                    false,
+                    BufferSizes.StreamReader,
+                    true
+                );
+                using var buffer = MemoryPool<char>.Shared.Rent(BufferSizes.StreamReader);
 
-                stringBuilder.Append(buffer.Memory[..charsRead]);
+                while (true)
+                {
+                    var charsRead = await reader
+                        .ReadAsync(buffer.Memory, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (charsRead <= 0)
+                        break;
+
+                    stringBuilder.Append(buffer.Memory[..charsRead]);
+                }
             }
-        });
+        );
 
     /// <summary>
     /// Creates a pipe target that writes to the specified string builder.
-    /// Uses <see cref="Console.OutputEncoding" /> for decoding.
+    /// Uses <see cref="Encoding.Default" /> for decoding.
     /// </summary>
     public static PipeTarget ToStringBuilder(StringBuilder stringBuilder) =>
-        ToStringBuilder(stringBuilder, Console.OutputEncoding);
+        ToStringBuilder(stringBuilder, Encoding.Default);
 
     /// <summary>
     /// Creates a pipe target that invokes the specified asynchronous delegate on every line written to the stream.
     /// </summary>
-    public static PipeTarget ToDelegate(Func<string, CancellationToken, Task> handleLineAsync, Encoding encoding) =>
-        Create(async (origin, cancellationToken) =>
-        {
-            using var reader = new StreamReader(origin, encoding, false, BufferSizes.StreamReader, true);
-            await foreach (var line in reader.ReadAllLinesAsync(cancellationToken).ConfigureAwait(false))
-                await handleLineAsync(line, cancellationToken).ConfigureAwait(false);
-        });
+    public static PipeTarget ToDelegate(
+        Func<string, CancellationToken, Task> handleLineAsync,
+        Encoding encoding
+    ) =>
+        Create(
+            async (origin, cancellationToken) =>
+            {
+                using var reader = new StreamReader(
+                    origin,
+                    encoding,
+                    false,
+                    BufferSizes.StreamReader,
+                    true
+                );
+
+                await foreach (
+                    var line in reader.ReadAllLinesAsync(cancellationToken).ConfigureAwait(false)
+                )
+                {
+                    await handleLineAsync(line, cancellationToken).ConfigureAwait(false);
+                }
+            }
+        );
 
     /// <summary>
     /// Creates a pipe target that invokes the specified asynchronous delegate on every line written to the stream.
-    /// Uses <see cref="Console.OutputEncoding" /> for decoding.
+    /// Uses <see cref="Encoding.Default" /> for decoding.
     /// </summary>
     public static PipeTarget ToDelegate(Func<string, CancellationToken, Task> handleLineAsync) =>
-        ToDelegate(handleLineAsync, Console.OutputEncoding);
+        ToDelegate(handleLineAsync, Encoding.Default);
 
     /// <summary>
     /// Creates a pipe target that invokes the specified asynchronous delegate on every line written to the stream.
     /// </summary>
     public static PipeTarget ToDelegate(Func<string, Task> handleLineAsync, Encoding encoding) =>
-        ToDelegate(
-            async (line, _) => await handleLineAsync(line).ConfigureAwait(false),
-            encoding
-        );
+        ToDelegate(async (line, _) => await handleLineAsync(line).ConfigureAwait(false), encoding);
 
     /// <summary>
     /// Creates a pipe target that invokes the specified asynchronous delegate on every line written to the stream.
-    /// Uses <see cref="Console.OutputEncoding" /> for decoding.
+    /// Uses <see cref="Encoding.Default" /> for decoding.
     /// </summary>
     public static PipeTarget ToDelegate(Func<string, Task> handleLineAsync) =>
-        ToDelegate(handleLineAsync, Console.OutputEncoding);
+        ToDelegate(handleLineAsync, Encoding.Default);
 
     /// <summary>
     /// Creates a pipe target that invokes the specified synchronous delegate on every line written to the stream.
     /// </summary>
     public static PipeTarget ToDelegate(Action<string> handleLine, Encoding encoding) =>
-        ToDelegate(line =>
-        {
-            handleLine(line);
-            return Task.CompletedTask;
-        }, encoding);
+        ToDelegate(
+            line =>
+            {
+                handleLine(line);
+                return Task.CompletedTask;
+            },
+            encoding
+        );
 
     /// <summary>
     /// Creates a pipe target that invokes the specified synchronous delegate on every line written to the stream.
-    /// Uses <see cref="Console.OutputEncoding" /> for decoding.
+    /// Uses <see cref="Encoding.Default" /> for decoding.
     /// </summary>
     public static PipeTarget ToDelegate(Action<string> handleLine) =>
-        ToDelegate(handleLine, Console.OutputEncoding);
+        ToDelegate(handleLine, Encoding.Default);
 
     /// <summary>
     /// Creates a pipe target that replicates data over multiple inner targets.
     /// </summary>
-    public static PipeTarget Merge(IEnumerable<PipeTarget> targets)
+    public static PipeTarget Merge(params IEnumerable<PipeTarget> targets)
     {
         // This function needs to take output as a parameter because it's recursive
         static void FlattenTargets(IEnumerable<PipeTarget> targets, ICollection<PipeTarget> output)
@@ -292,5 +340,7 @@ public partial class PipeTarget
     /// <summary>
     /// Creates a pipe target that replicates data over multiple inner targets.
     /// </summary>
-    public static PipeTarget Merge(params PipeTarget[] targets) => Merge((IEnumerable<PipeTarget>)targets);
+    // TODO: (breaking change) remove the other overload
+    public static PipeTarget Merge(params PipeTarget[] targets) =>
+        Merge((IEnumerable<PipeTarget>)targets);
 }

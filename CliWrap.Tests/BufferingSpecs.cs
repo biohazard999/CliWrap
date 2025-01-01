@@ -5,19 +5,14 @@ using Xunit;
 
 namespace CliWrap.Tests;
 
-public class BufferedSpecs
+public class BufferingSpecs
 {
     [Fact(Timeout = 15000)]
     public async Task I_can_execute_a_command_with_buffering_and_get_the_stdout()
     {
         // Arrange
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo")
-                .Add("Hello stdout")
-                .Add("--target").Add("stdout")
-            );
+        var cmd = Cli.Wrap(Dummy.Program.FilePath)
+            .WithArguments(["echo", "Hello stdout", "--target", "stdout"]);
 
         // Act
         var result = await cmd.ExecuteBufferedAsync();
@@ -31,13 +26,8 @@ public class BufferedSpecs
     public async Task I_can_execute_a_command_with_buffering_and_get_the_stderr()
     {
         // Arrange
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo")
-                .Add("Hello stderr")
-                .Add("--target").Add("stderr")
-            );
+        var cmd = Cli.Wrap(Dummy.Program.FilePath)
+            .WithArguments(["echo", "Hello stderr", "--target", "stderr"]);
 
         // Act
         var result = await cmd.ExecuteBufferedAsync();
@@ -51,13 +41,8 @@ public class BufferedSpecs
     public async Task I_can_execute_a_command_with_buffering_and_get_the_stdout_and_stderr()
     {
         // Arrange
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo")
-                .Add("Hello stdout and stderr")
-                .Add("--target").Add("all")
-            );
+        var cmd = Cli.Wrap(Dummy.Program.FilePath)
+            .WithArguments(["echo", "Hello stdout and stderr", "--target", "all"]);
 
         // Act
         var result = await cmd.ExecuteBufferedAsync();
@@ -71,13 +56,8 @@ public class BufferedSpecs
     public async Task I_can_execute_a_command_with_buffering_and_not_hang_on_large_stdout_and_stderr()
     {
         // Arrange
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate text")
-                .Add("--target").Add("all")
-                .Add("--length").Add(100_000)
-            );
+        var cmd = Cli.Wrap(Dummy.Program.FilePath)
+            .WithArguments(["generate text", "--target", "all", "--length", "100000"]);
 
         // Act
         var result = await cmd.ExecuteBufferedAsync();

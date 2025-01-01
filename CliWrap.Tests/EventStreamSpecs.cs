@@ -14,13 +14,8 @@ public class EventStreamSpecs
     public async Task I_can_execute_a_command_as_a_pull_based_event_stream()
     {
         // Arrange
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate text")
-                .Add("--target").Add("all")
-                .Add("--lines").Add(100)
-            );
+        var cmd = Cli.Wrap(Dummy.Program.FilePath)
+            .WithArguments(["generate text", "--target", "all", "--lines", "100"]);
 
         // Act
         var events = new List<CommandEvent>();
@@ -40,13 +35,8 @@ public class EventStreamSpecs
     public async Task I_can_execute_a_command_as_a_push_based_event_stream()
     {
         // Arrange
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate text")
-                .Add("--target").Add("all")
-                .Add("--lines").Add(100)
-            );
+        var cmd = Cli.Wrap(Dummy.Program.FilePath)
+            .WithArguments(["generate text", "--target", "all", "--lines", "100"]);
 
         // Act
         var events = await cmd.Observe().ToArray();

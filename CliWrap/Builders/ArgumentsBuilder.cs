@@ -23,10 +23,7 @@ public partial class ArgumentsBuilder
         if (_buffer.Length > 0)
             _buffer.Append(' ');
 
-        _buffer.Append(escape
-            ? Escape(value)
-            : value
-        );
+        _buffer.Append(escape ? Escape(value) : value);
 
         return this;
     }
@@ -52,14 +49,16 @@ public partial class ArgumentsBuilder
     /// Adds the specified values to the list of arguments.
     /// </summary>
     // TODO: (breaking change) remove in favor of optional parameter
-    public ArgumentsBuilder Add(IEnumerable<string> values) =>
-        Add(values, true);
+    public ArgumentsBuilder Add(IEnumerable<string> values) => Add(values, true);
 
     /// <summary>
     /// Adds the specified value to the list of arguments.
     /// </summary>
-    public ArgumentsBuilder Add(IFormattable value, IFormatProvider formatProvider, bool escape = true) =>
-        Add(value.ToString(null, formatProvider), escape);
+    public ArgumentsBuilder Add(
+        IFormattable value,
+        IFormatProvider formatProvider,
+        bool escape = true
+    ) => Add(value.ToString(null, formatProvider), escape);
 
     /// <summary>
     /// Adds the specified value to the list of arguments.
@@ -87,13 +86,16 @@ public partial class ArgumentsBuilder
     /// The value is converted to string using invariant culture.
     /// </summary>
     // TODO: (breaking change) remove in favor of optional parameter
-    public ArgumentsBuilder Add(IFormattable value) =>
-        Add(value, true);
+    public ArgumentsBuilder Add(IFormattable value) => Add(value, true);
 
     /// <summary>
     /// Adds the specified values to the list of arguments.
     /// </summary>
-    public ArgumentsBuilder Add(IEnumerable<IFormattable> values, IFormatProvider formatProvider, bool escape = true)
+    public ArgumentsBuilder Add(
+        IEnumerable<IFormattable> values,
+        IFormatProvider formatProvider,
+        bool escape = true
+    )
     {
         foreach (var value in values)
             Add(value, formatProvider, escape);
@@ -105,8 +107,11 @@ public partial class ArgumentsBuilder
     /// Adds the specified values to the list of arguments.
     /// </summary>
     // TODO: (breaking change) remove in favor of the other overloads
-    public ArgumentsBuilder Add(IEnumerable<IFormattable> values, CultureInfo cultureInfo, bool escape) =>
-        Add(values, (IFormatProvider)cultureInfo, escape);
+    public ArgumentsBuilder Add(
+        IEnumerable<IFormattable> values,
+        CultureInfo cultureInfo,
+        bool escape
+    ) => Add(values, (IFormatProvider)cultureInfo, escape);
 
     /// <summary>
     /// Adds the specified values to the list of arguments.
@@ -127,8 +132,7 @@ public partial class ArgumentsBuilder
     /// The values are converted to string using invariant culture.
     /// </summary>
     // TODO: (breaking change) remove in favor of optional parameter
-    public ArgumentsBuilder Add(IEnumerable<IFormattable> values) =>
-        Add(values, true);
+    public ArgumentsBuilder Add(IEnumerable<IFormattable> values) => Add(values, true);
 
     /// <summary>
     /// Builds the resulting arguments string.
@@ -138,7 +142,16 @@ public partial class ArgumentsBuilder
 
 public partial class ArgumentsBuilder
 {
-    private static string Escape(string argument)
+    /// <summary>
+    /// Escapes special characters (spaces, slashes, and quotes) in the specified string, ensuring that the output
+    /// is correctly interpreted as a single argument when passed to a command-line application.
+    /// </summary>
+    /// <remarks>
+    /// In most cases, you should not need to use this method, as <see cref="ArgumentsBuilder" /> already escapes
+    /// arguments automatically. This method is provided for advanced scenarios where you need to escape arguments
+    /// manually.
+    /// </remarks>
+    public static string Escape(string argument)
     {
         // Implementation reference:
         // https://github.com/dotnet/runtime/blob/9a50493f9f1125fda5e2212b9d6718bc7cdbc5c0/src/libraries/System.Private.CoreLib/src/System/PasteArguments.cs#L10-L79
@@ -152,7 +165,7 @@ public partial class ArgumentsBuilder
 
         buffer.Append('"');
 
-        for (var i = 0; i < argument.Length;)
+        for (var i = 0; i < argument.Length; )
         {
             var c = argument[i++];
 
@@ -171,9 +184,7 @@ public partial class ArgumentsBuilder
                 }
                 else if (argument[i] == '"')
                 {
-                    buffer
-                        .Append('\\', backslashCount * 2 + 1)
-                        .Append('"');
+                    buffer.Append('\\', backslashCount * 2 + 1).Append('"');
 
                     i++;
                 }

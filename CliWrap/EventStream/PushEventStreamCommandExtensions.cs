@@ -25,9 +25,10 @@ public static partial class EventStreamCommandExtensions
         Encoding standardOutputEncoding,
         Encoding standardErrorEncoding,
         CancellationToken forcefulCancellationToken,
-        CancellationToken gracefulCancellationToken)
+        CancellationToken gracefulCancellationToken
+    )
     {
-        return Observable.Create<CommandEvent>(observer =>
+        return Observable.CreateSynchronized<CommandEvent>(observer =>
         {
             var stdOutPipe = PipeTarget.Merge(
                 command.StandardOutputPipe,
@@ -49,14 +50,17 @@ public static partial class EventStreamCommandExtensions
                 .WithStandardOutputPipe(stdOutPipe)
                 .WithStandardErrorPipe(stdErrPipe);
 
-            var commandTask = commandWithPipes.ExecuteAsync(forcefulCancellationToken, gracefulCancellationToken);
+            var commandTask = commandWithPipes.ExecuteAsync(
+                forcefulCancellationToken,
+                gracefulCancellationToken
+            );
+
             observer.OnNext(new StartedCommandEvent(commandTask.ProcessId));
 
             // Don't pass cancellation token to the continuation because we need it to
             // trigger regardless of how the task completed.
-            _ = commandTask
-                .Task
-                .ContinueWith(t =>
+            _ = commandTask.Task.ContinueWith(
+                t =>
                 {
                     // Canceled tasks don't have exceptions
                     if (t.IsCanceled)
@@ -72,7 +76,9 @@ public static partial class EventStreamCommandExtensions
                         observer.OnNext(new ExitedCommandEvent(t.Result.ExitCode));
                         observer.OnCompleted();
                     }
-                }, TaskContinuationOptions.None);
+                },
+                TaskContinuationOptions.None
+            );
 
             return Disposable.Null;
         });
@@ -88,7 +94,8 @@ public static partial class EventStreamCommandExtensions
         this Command command,
         Encoding standardOutputEncoding,
         Encoding standardErrorEncoding,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         return command.Observe(
             standardOutputEncoding,
@@ -107,29 +114,24 @@ public static partial class EventStreamCommandExtensions
     public static IObservable<CommandEvent> Observe(
         this Command command,
         Encoding encoding,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
-        return command.Observe(
-            encoding,
-            encoding,
-            cancellationToken
-        );
+        return command.Observe(encoding, encoding, cancellationToken);
     }
 
     /// <summary>
     /// Executes the command as a push-based event stream.
-    /// Uses <see cref="Console.OutputEncoding" /> for decoding.
+    /// Uses <see cref="Encoding.Default" /> for decoding.
     /// </summary>
     /// <remarks>
     /// Use pattern matching to handle specific instances of <see cref="CommandEvent" />.
     /// </remarks>
     public static IObservable<CommandEvent> Observe(
         this Command command,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
-        return command.Observe(
-            Console.OutputEncoding,
-            cancellationToken
-        );
+        return command.Observe(Encoding.Default, cancellationToken);
     }
 }

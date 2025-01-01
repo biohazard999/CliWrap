@@ -20,7 +20,7 @@ public class PathResolutionSpecs
         var result = await cmd.ExecuteBufferedAsync();
 
         // Assert
-        result.ExitCode.Should().Be(0);
+        result.IsSuccess.Should().BeTrue();
         result.StandardOutput.Trim().Should().MatchRegex(@"^\d+\.\d+\.\d+$");
     }
 
@@ -34,10 +34,7 @@ public class PathResolutionSpecs
 
         // Arrange
         using var dir = TempDir.Create();
-        await File.WriteAllTextAsync(
-            Path.Combine(dir.Path, "test-script.cmd"),
-            "@echo hello"
-        );
+        File.WriteAllText(Path.Combine(dir.Path, "test-script.cmd"), "@echo hello");
 
         using (TempEnvironmentVariable.ExtendPath(dir.Path))
         {
@@ -47,7 +44,7 @@ public class PathResolutionSpecs
             var result = await cmd.ExecuteBufferedAsync();
 
             // Assert
-            result.ExitCode.Should().Be(0);
+            result.IsSuccess.Should().BeTrue();
             result.StandardOutput.Trim().Should().Be("hello");
         }
     }

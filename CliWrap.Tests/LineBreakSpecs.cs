@@ -15,21 +15,14 @@ public class LineBreakSpecs
 
         var stdOutLines = new List<string>();
 
-        var cmd = data | Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-            ) | stdOutLines.Add;
+        var cmd =
+            data | Cli.Wrap(Dummy.Program.FilePath).WithArguments("echo stdin") | stdOutLines.Add;
 
         // Act
         await cmd.ExecuteAsync();
 
         // Assert
-        stdOutLines.Should().Equal(
-            "Foo",
-            "Bar",
-            "Baz"
-        );
+        stdOutLines.Should().Equal("Foo", "Bar", "Baz");
     }
 
     [Fact(Timeout = 15000)]
@@ -40,21 +33,14 @@ public class LineBreakSpecs
 
         var stdOutLines = new List<string>();
 
-        var cmd = data | Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-            ) | stdOutLines.Add;
+        var cmd =
+            data | Cli.Wrap(Dummy.Program.FilePath).WithArguments("echo stdin") | stdOutLines.Add;
 
         // Act
         await cmd.ExecuteAsync();
 
         // Assert
-        stdOutLines.Should().Equal(
-            "Foo",
-            "Bar",
-            "Baz"
-        );
+        stdOutLines.Should().Equal("Foo", "Bar", "Baz");
     }
 
     [Fact(Timeout = 15000)]
@@ -65,21 +51,14 @@ public class LineBreakSpecs
 
         var stdOutLines = new List<string>();
 
-        var cmd = data | Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-            ) | stdOutLines.Add;
+        var cmd =
+            data | Cli.Wrap(Dummy.Program.FilePath).WithArguments("echo stdin") | stdOutLines.Add;
 
         // Act
         await cmd.ExecuteAsync();
 
         // Assert
-        stdOutLines.Should().Equal(
-            "Foo",
-            "Bar",
-            "Baz"
-        );
+        stdOutLines.Should().Equal("Foo", "Bar", "Baz");
     }
 
     [Fact(Timeout = 15000)]
@@ -90,22 +69,13 @@ public class LineBreakSpecs
 
         var stdOutLines = new List<string>();
 
-        var cmd = data | Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-            ) | stdOutLines.Add;
+        var cmd =
+            data | Cli.Wrap(Dummy.Program.FilePath).WithArguments("echo stdin") | stdOutLines.Add;
 
         // Act
         await cmd.ExecuteAsync();
 
         // Assert
-        stdOutLines.Should().Equal(
-            "Foo",
-            "",
-            "Bar",
-            "",
-            "Baz"
-        );
+        stdOutLines.Should().Equal("Foo", "", "Bar", "", "Baz");
     }
 }
