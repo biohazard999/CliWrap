@@ -10,91 +10,84 @@ namespace CliWrap;
 /// <summary>
 /// Instructions for running a process.
 /// </summary>
-public partial class Command : ICommandConfiguration
+public partial class Command(
+    string targetFilePath,
+    string arguments,
+    string workingDirPath,
+    ResourcePolicy resourcePolicy,
+    Credentials credentials,
+    IReadOnlyDictionary<string, string?> environmentVariables,
+    CommandResultValidation validation,
+    PipeSource standardInputPipe,
+    PipeTarget standardOutputPipe,
+    PipeTarget standardErrorPipe
+) : ICommandConfiguration
 {
-    /// <inheritdoc />
-    public string TargetFilePath { get; }
-
-    /// <inheritdoc />
-    public string Arguments { get; }
-
-    /// <inheritdoc />
-    public string WorkingDirPath { get; }
-
-    /// <inheritdoc />
-    public Credentials Credentials { get; }
-
-    /// <inheritdoc />
-    public IReadOnlyDictionary<string, string?> EnvironmentVariables { get; }
-
-    /// <inheritdoc />
-    public CommandResultValidation Validation { get; }
-
-    /// <inheritdoc />
-    public PipeSource StandardInputPipe { get; }
-
-    /// <inheritdoc />
-    public PipeTarget StandardOutputPipe { get; }
-
-    /// <inheritdoc />
-    public PipeTarget StandardErrorPipe { get; }
-
     /// <summary>
     /// Initializes an instance of <see cref="Command" />.
     /// </summary>
-    public Command(
-        string targetFilePath,
-        string arguments,
-        string workingDirPath,
-        Credentials credentials,
-        IReadOnlyDictionary<string, string?> environmentVariables,
-        CommandResultValidation validation,
-        PipeSource standardInputPipe,
-        PipeTarget standardOutputPipe,
-        PipeTarget standardErrorPipe)
-    {
-        TargetFilePath = targetFilePath;
-        Arguments = arguments;
-        WorkingDirPath = workingDirPath;
-        Credentials = credentials;
-        EnvironmentVariables = environmentVariables;
-        Validation = validation;
-        StandardInputPipe = standardInputPipe;
-        StandardOutputPipe = standardOutputPipe;
-        StandardErrorPipe = standardErrorPipe;
-    }
+    public Command(string targetFilePath)
+        : this(
+            targetFilePath,
+            string.Empty,
+            Directory.GetCurrentDirectory(),
+            ResourcePolicy.Default,
+            Credentials.Default,
+            new Dictionary<string, string?>(),
+            CommandResultValidation.ZeroExitCode,
+            PipeSource.Null,
+            PipeTarget.Null,
+            PipeTarget.Null
+        ) { }
 
-    /// <summary>
-    /// Initializes an instance of <see cref="Command" />.
-    /// </summary>
-    public Command(string targetFilePath) : this(
-        targetFilePath,
-        string.Empty,
-        Directory.GetCurrentDirectory(),
-        Credentials.Default,
-        new Dictionary<string, string?>(),
-        CommandResultValidation.ZeroExitCode,
-        PipeSource.Null,
-        PipeTarget.Null,
-        PipeTarget.Null)
-    {
-    }
+    /// <inheritdoc />
+    public string TargetFilePath { get; } = targetFilePath;
+
+    /// <inheritdoc />
+    public string Arguments { get; } = arguments;
+
+    /// <inheritdoc />
+    public string WorkingDirPath { get; } = workingDirPath;
+
+    /// <inheritdoc />
+    public ResourcePolicy ResourcePolicy { get; } = resourcePolicy;
+
+    /// <inheritdoc />
+    public Credentials Credentials { get; } = credentials;
+
+    /// <inheritdoc />
+    public IReadOnlyDictionary<string, string?> EnvironmentVariables { get; } =
+        environmentVariables;
+
+    /// <inheritdoc />
+    public CommandResultValidation Validation { get; } = validation;
+
+    /// <inheritdoc />
+    public PipeSource StandardInputPipe { get; } = standardInputPipe;
+
+    /// <inheritdoc />
+    public PipeTarget StandardOutputPipe { get; } = standardOutputPipe;
+
+    /// <inheritdoc />
+    public PipeTarget StandardErrorPipe { get; } = standardErrorPipe;
 
     /// <summary>
     /// Creates a copy of this command, setting the target file path to the specified value.
     /// </summary>
     [Pure]
-    public Command WithTargetFile(string targetFilePath) => new(
-        targetFilePath,
-        Arguments,
-        WorkingDirPath,
-        Credentials,
-        EnvironmentVariables,
-        Validation,
-        StandardInputPipe,
-        StandardOutputPipe,
-        StandardErrorPipe
-    );
+    public Command WithTargetFile(string targetFilePath) =>
+        new(
+            targetFilePath,
+            Arguments,
+            WorkingDirPath,
+            ResourcePolicy,
+            Credentials,
+            EnvironmentVariables,
+            Validation,
+            StandardInputPipe,
+            StandardOutputPipe,
+            StandardErrorPipe
+        );
 
     /// <summary>
     /// Creates a copy of this command, setting the arguments to the specified value.
@@ -104,17 +97,19 @@ public partial class Command : ICommandConfiguration
     /// Formatting errors may lead to unexpected bugs and security vulnerabilities.
     /// </remarks>
     [Pure]
-    public Command WithArguments(string arguments) => new(
-        TargetFilePath,
-        arguments,
-        WorkingDirPath,
-        Credentials,
-        EnvironmentVariables,
-        Validation,
-        StandardInputPipe,
-        StandardOutputPipe,
-        StandardErrorPipe
-    );
+    public Command WithArguments(string arguments) =>
+        new(
+            TargetFilePath,
+            arguments,
+            WorkingDirPath,
+            ResourcePolicy,
+            Credentials,
+            EnvironmentVariables,
+            Validation,
+            StandardInputPipe,
+            StandardOutputPipe,
+            StandardErrorPipe
+        );
 
     /// <summary>
     /// Creates a copy of this command, setting the arguments to the value
@@ -130,8 +125,7 @@ public partial class Command : ICommandConfiguration
     /// </summary>
     // TODO: (breaking change) remove in favor of optional parameter
     [Pure]
-    public Command WithArguments(IEnumerable<string> arguments) =>
-        WithArguments(arguments, true);
+    public Command WithArguments(IEnumerable<string> arguments) => WithArguments(arguments, true);
 
     /// <summary>
     /// Creates a copy of this command, setting the arguments to the value
@@ -150,33 +144,68 @@ public partial class Command : ICommandConfiguration
     /// Creates a copy of this command, setting the working directory path to the specified value.
     /// </summary>
     [Pure]
-    public Command WithWorkingDirectory(string workingDirPath) => new(
-        TargetFilePath,
-        Arguments,
-        workingDirPath,
-        Credentials,
-        EnvironmentVariables,
-        Validation,
-        StandardInputPipe,
-        StandardOutputPipe,
-        StandardErrorPipe
-    );
+    public Command WithWorkingDirectory(string workingDirPath) =>
+        new(
+            TargetFilePath,
+            Arguments,
+            workingDirPath,
+            ResourcePolicy,
+            Credentials,
+            EnvironmentVariables,
+            Validation,
+            StandardInputPipe,
+            StandardOutputPipe,
+            StandardErrorPipe
+        );
+
+    /// <summary>
+    /// Creates a copy of this command, setting the resource policy to the specified value.
+    /// </summary>
+    [Pure]
+    public Command WithResourcePolicy(ResourcePolicy resourcePolicy) =>
+        new(
+            TargetFilePath,
+            Arguments,
+            WorkingDirPath,
+            resourcePolicy,
+            Credentials,
+            EnvironmentVariables,
+            Validation,
+            StandardInputPipe,
+            StandardOutputPipe,
+            StandardErrorPipe
+        );
+
+    /// <summary>
+    /// Creates a copy of this command, setting the resource policy to the value
+    /// configured by the specified delegate.
+    /// </summary>
+    [Pure]
+    public Command WithResourcePolicy(Action<ResourcePolicyBuilder> configure)
+    {
+        var builder = new ResourcePolicyBuilder();
+        configure(builder);
+
+        return WithResourcePolicy(builder.Build());
+    }
 
     /// <summary>
     /// Creates a copy of this command, setting the user credentials to the specified value.
     /// </summary>
     [Pure]
-    public Command WithCredentials(Credentials credentials) => new(
-        TargetFilePath,
-        Arguments,
-        WorkingDirPath,
-        credentials,
-        EnvironmentVariables,
-        Validation,
-        StandardInputPipe,
-        StandardOutputPipe,
-        StandardErrorPipe
-    );
+    public Command WithCredentials(Credentials credentials) =>
+        new(
+            TargetFilePath,
+            Arguments,
+            WorkingDirPath,
+            ResourcePolicy,
+            credentials,
+            EnvironmentVariables,
+            Validation,
+            StandardInputPipe,
+            StandardOutputPipe,
+            StandardErrorPipe
+        );
 
     /// <summary>
     /// Creates a copy of this command, setting the user credentials to the value
@@ -195,17 +224,21 @@ public partial class Command : ICommandConfiguration
     /// Creates a copy of this command, setting the environment variables to the specified value.
     /// </summary>
     [Pure]
-    public Command WithEnvironmentVariables(IReadOnlyDictionary<string, string?> environmentVariables) => new(
-        TargetFilePath,
-        Arguments,
-        WorkingDirPath,
-        Credentials,
-        environmentVariables,
-        Validation,
-        StandardInputPipe,
-        StandardOutputPipe,
-        StandardErrorPipe
-    );
+    public Command WithEnvironmentVariables(
+        IReadOnlyDictionary<string, string?> environmentVariables
+    ) =>
+        new(
+            TargetFilePath,
+            Arguments,
+            WorkingDirPath,
+            ResourcePolicy,
+            Credentials,
+            environmentVariables,
+            Validation,
+            StandardInputPipe,
+            StandardOutputPipe,
+            StandardErrorPipe
+        );
 
     /// <summary>
     /// Creates a copy of this command, setting the environment variables to the value
@@ -224,65 +257,73 @@ public partial class Command : ICommandConfiguration
     /// Creates a copy of this command, setting the validation options to the specified value.
     /// </summary>
     [Pure]
-    public Command WithValidation(CommandResultValidation validation) => new(
-        TargetFilePath,
-        Arguments,
-        WorkingDirPath,
-        Credentials,
-        EnvironmentVariables,
-        validation,
-        StandardInputPipe,
-        StandardOutputPipe,
-        StandardErrorPipe
-    );
+    public Command WithValidation(CommandResultValidation validation) =>
+        new(
+            TargetFilePath,
+            Arguments,
+            WorkingDirPath,
+            ResourcePolicy,
+            Credentials,
+            EnvironmentVariables,
+            validation,
+            StandardInputPipe,
+            StandardOutputPipe,
+            StandardErrorPipe
+        );
 
     /// <summary>
     /// Creates a copy of this command, setting the standard input pipe to the specified source.
     /// </summary>
     [Pure]
-    public Command WithStandardInputPipe(PipeSource source) => new(
-        TargetFilePath,
-        Arguments,
-        WorkingDirPath,
-        Credentials,
-        EnvironmentVariables,
-        Validation,
-        source,
-        StandardOutputPipe,
-        StandardErrorPipe
-    );
+    public Command WithStandardInputPipe(PipeSource source) =>
+        new(
+            TargetFilePath,
+            Arguments,
+            WorkingDirPath,
+            ResourcePolicy,
+            Credentials,
+            EnvironmentVariables,
+            Validation,
+            source,
+            StandardOutputPipe,
+            StandardErrorPipe
+        );
 
     /// <summary>
     /// Creates a copy of this command, setting the standard output pipe to the specified target.
     /// </summary>
     [Pure]
-    public Command WithStandardOutputPipe(PipeTarget target) => new(
-        TargetFilePath,
-        Arguments,
-        WorkingDirPath,
-        Credentials,
-        EnvironmentVariables,
-        Validation,
-        StandardInputPipe,
-        target,
-        StandardErrorPipe
-    );
+    public Command WithStandardOutputPipe(PipeTarget target) =>
+        new(
+            TargetFilePath,
+            Arguments,
+            WorkingDirPath,
+            ResourcePolicy,
+            Credentials,
+            EnvironmentVariables,
+            Validation,
+            StandardInputPipe,
+            target,
+            StandardErrorPipe
+        );
 
     /// <summary>
     /// Creates a copy of this command, setting the standard error pipe to the specified target.
     /// </summary>
     [Pure]
-    public Command WithStandardErrorPipe(PipeTarget target) => new(
-        TargetFilePath,
-        Arguments,
-        WorkingDirPath,
-        Credentials,
-        EnvironmentVariables,
-        Validation,
-        StandardInputPipe,
-        StandardOutputPipe,
-        target
-    );
+    public Command WithStandardErrorPipe(PipeTarget target) =>
+        new(
+            TargetFilePath,
+            Arguments,
+            WorkingDirPath,
+            ResourcePolicy,
+            Credentials,
+            EnvironmentVariables,
+            Validation,
+            StandardInputPipe,
+            StandardOutputPipe,
+            target
+        );
 
     /// <inheritdoc />
     [ExcludeFromCodeCoverage]

@@ -7,24 +7,19 @@ using CliWrap.Utils.Extensions;
 
 namespace CliWrap.Utils;
 
-internal partial class WindowsSignaler : IDisposable
+internal partial class WindowsSignaler(string filePath) : IDisposable
 {
-    private readonly string _filePath;
-
-    public WindowsSignaler(string filePath) =>
-        _filePath = filePath;
-
     public bool TrySend(int processId, int signalId)
     {
         using var process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = _filePath,
+                FileName = filePath,
                 Arguments =
-                    processId.ToString(CultureInfo.InvariantCulture) +
-                    ' ' +
-                    signalId.ToString(CultureInfo.InvariantCulture),
+                    processId.ToString(CultureInfo.InvariantCulture)
+                    + ' '
+                    + signalId.ToString(CultureInfo.InvariantCulture),
                 CreateNoWindow = true,
                 UseShellExecute = false,
                 Environment =
@@ -32,9 +27,9 @@ internal partial class WindowsSignaler : IDisposable
                     // This is a .NET 3.5 executable, so we need to configure framework rollover
                     // to allow it to also run against .NET 4.0 and higher.
                     // https://gist.github.com/MichalStrehovsky/d6bc5e4d459c23d0cf3bd17af9a1bcf5
-                    ["COMPLUS_OnlyUseLatestCLR"] = "1"
-                }
-            }
+                    ["COMPLUS_OnlyUseLatestCLR"] = "1",
+                },
+            },
         };
 
         if (!process.Start())
@@ -50,7 +45,7 @@ internal partial class WindowsSignaler : IDisposable
     {
         try
         {
-            File.Delete(_filePath);
+            File.Delete(filePath);
         }
         catch
         {
@@ -64,7 +59,7 @@ internal partial class WindowsSignaler
     public static WindowsSignaler Deploy()
     {
         // Signaler executable is embedded inside this library as a resource
-        var filePath = Path.ChangeExtension(Path.GetTempFileName(), "exe");
+        var filePath = Path.Combine(Path.GetTempPath(), $"CliWrap.Signaler.{Guid.NewGuid()}.exe");
         Assembly.GetExecutingAssembly().ExtractManifestResource("CliWrap.Signaler.exe", filePath);
 
         return new WindowsSignaler(filePath);

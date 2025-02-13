@@ -24,7 +24,8 @@ public static class BufferedCommandExtensions
         Encoding standardOutputEncoding,
         Encoding standardErrorEncoding,
         CancellationToken forcefulCancellationToken,
-        CancellationToken gracefulCancellationToken)
+        CancellationToken gracefulCancellationToken
+    )
     {
         var stdOutBuffer = new StringBuilder();
         var stdErrBuffer = new StringBuilder();
@@ -88,7 +89,8 @@ public static class BufferedCommandExtensions
         this Command command,
         Encoding standardOutputEncoding,
         Encoding standardErrorEncoding,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         return command.ExecuteBufferedAsync(
             standardOutputEncoding,
@@ -109,31 +111,26 @@ public static class BufferedCommandExtensions
     public static CommandTask<BufferedCommandResult> ExecuteBufferedAsync(
         this Command command,
         Encoding encoding,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
-        return command.ExecuteBufferedAsync(
-            encoding,
-            encoding,
-            cancellationToken
-        );
+        return command.ExecuteBufferedAsync(encoding, encoding, cancellationToken);
     }
 
     /// <summary>
     /// Executes the command asynchronously with buffering.
     /// Data written to the standard output and standard error streams is decoded as text
     /// and returned as part of the result object.
-    /// Uses <see cref="Console.OutputEncoding" /> for decoding.
+    /// Uses <see cref="Encoding.Default" /> for decoding.
     /// </summary>
     /// <remarks>
     /// This method can be awaited.
     /// </remarks>
     public static CommandTask<BufferedCommandResult> ExecuteBufferedAsync(
         this Command command,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
-        return command.ExecuteBufferedAsync(
-            Console.OutputEncoding,
-            cancellationToken
-        );
+        return command.ExecuteBufferedAsync(Encoding.Default, cancellationToken);
     }
 }

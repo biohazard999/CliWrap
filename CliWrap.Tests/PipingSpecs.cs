@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -17,15 +18,11 @@ public class PipingSpecs
     public async Task I_can_execute_a_command_and_pipe_the_stdin_from_an_async_anonymous_source()
     {
         // Arrange
-        var source = PipeSource.Create(async (destination, cancellationToken) =>
-            await destination.WriteAsync("Hello world!"u8.ToArray(), cancellationToken)
-        );
-
-        var cmd = source | Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-            );
+        var cmd =
+            PipeSource.Create(
+                async (destination, cancellationToken) =>
+                    await destination.WriteAsync("Hello world!"u8.ToArray(), cancellationToken)
+            ) | Cli.Wrap(Dummy.Program.FilePath).WithArguments("echo stdin");
 
         // Act
         var result = await cmd.ExecuteBufferedAsync();
@@ -38,15 +35,9 @@ public class PipingSpecs
     public async Task I_can_execute_a_command_and_pipe_the_stdin_from_a_sync_anonymous_source()
     {
         // Arrange
-        var source = PipeSource.Create(destination =>
-            destination.Write("Hello world!"u8)
-        );
-
-        var cmd = source | Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-            );
+        var cmd =
+            PipeSource.Create(destination => destination.Write("Hello world!"u8))
+            | Cli.Wrap(Dummy.Program.FilePath).WithArguments("echo stdin");
 
         // Act
         var result = await cmd.ExecuteBufferedAsync();
@@ -59,13 +50,9 @@ public class PipingSpecs
     public async Task I_can_execute_a_command_and_pipe_the_stdin_from_a_stream()
     {
         // Arrange
-        await using var stream = new MemoryStream("Hello world!"u8.ToArray());
+        using var stream = new MemoryStream("Hello world!"u8.ToArray());
 
-        var cmd = stream | Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-            );
+        var cmd = stream | Cli.Wrap(Dummy.Program.FilePath).WithArguments("echo stdin");
 
         // Act
         var result = await cmd.ExecuteBufferedAsync();
@@ -79,13 +66,11 @@ public class PipingSpecs
     {
         // Arrange
         using var file = TempFile.Create();
-        await File.WriteAllTextAsync(file.Path, "Hello world!");
+        File.WriteAllText(file.Path, "Hello world!");
 
-        var cmd = PipeSource.FromFile(file.Path) | Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-            );
+        var cmd =
+            PipeSource.FromFile(file.Path)
+            | Cli.Wrap(Dummy.Program.FilePath).WithArguments("echo stdin");
 
         // Act
         var result = await cmd.ExecuteBufferedAsync();
@@ -100,11 +85,7 @@ public class PipingSpecs
         // Arrange
         var data = new ReadOnlyMemory<byte>("Hello world!"u8.ToArray());
 
-        var cmd = data | Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-            );
+        var cmd = data | Cli.Wrap(Dummy.Program.FilePath).WithArguments("echo stdin");
 
         // Act
         var result = await cmd.ExecuteBufferedAsync();
@@ -119,11 +100,7 @@ public class PipingSpecs
         // Arrange
         var data = "Hello world!"u8.ToArray();
 
-        var cmd = data | Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-            );
+        var cmd = data | Cli.Wrap(Dummy.Program.FilePath).WithArguments("echo stdin");
 
         // Act
         var result = await cmd.ExecuteBufferedAsync();
@@ -136,11 +113,7 @@ public class PipingSpecs
     public async Task I_can_execute_a_command_and_pipe_the_stdin_from_a_string()
     {
         // Arrange
-        var cmd = "Hello world!" | Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-            );
+        var cmd = "Hello world!" | Cli.Wrap(Dummy.Program.FilePath).WithArguments("echo stdin");
 
         // Act
         var result = await cmd.ExecuteBufferedAsync();
@@ -154,15 +127,9 @@ public class PipingSpecs
     {
         // Arrange
         var cmd =
-            Cli.Wrap("dotnet").WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate binary")
-                .Add("--length").Add(100_000)
-            ) |
-            Cli.Wrap("dotnet").WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("print length stdin")
-            );
+            Cli.Wrap(Dummy.Program.FilePath)
+                .WithArguments(["generate binary", "--length", "100000"])
+            | Cli.Wrap(Dummy.Program.FilePath).WithArguments("length stdin");
 
         // Act
         var result = await cmd.ExecuteBufferedAsync();
@@ -172,24 +139,38 @@ public class PipingSpecs
     }
 
     [Fact(Timeout = 15000)]
+    public async Task I_can_execute_a_command_and_pipe_the_stdin_from_another_command_with_a_transform()
+    {
+        // Arrange
+        var cmd =
+            PipeSource.FromCommand(
+                Cli.Wrap(Dummy.Program.FilePath)
+                    .WithArguments(["generate binary", "--length", "100000"]),
+                // Transform: take the first 5000 bytes and discard the rest
+                async (source, destination, cancellationToken) =>
+                {
+                    using var buffer = MemoryPool<byte>.Shared.Rent(5000);
+                    await source.ReadAtLeastAsync(buffer.Memory, 5000, false, cancellationToken);
+                    await destination.WriteAsync(buffer.Memory[..5000], cancellationToken);
+                }
+            ) | Cli.Wrap(Dummy.Program.FilePath).WithArguments("length stdin");
+
+        // Act
+        var result = await cmd.ExecuteBufferedAsync();
+
+        // Assert
+        result.StandardOutput.Trim().Should().Be("5000");
+    }
+
+    [Fact(Timeout = 15000)]
     public async Task I_can_execute_a_command_and_pipe_the_stdin_from_a_chain_of_commands()
     {
         // Arrange
         var cmd =
-            "Hello world" |
-            Cli.Wrap("dotnet").WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-            ) |
-            Cli.Wrap("dotnet").WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-                .Add("--length").Add(5)
-            ) |
-            Cli.Wrap("dotnet").WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("print length stdin")
-            );
+            "Hello world"
+            | Cli.Wrap(Dummy.Program.FilePath).WithArguments("echo stdin")
+            | Cli.Wrap(Dummy.Program.FilePath).WithArguments(["echo stdin", "--length", "5"])
+            | Cli.Wrap(Dummy.Program.FilePath).WithArguments("length stdin");
 
         // Act
         var result = await cmd.ExecuteBufferedAsync();
@@ -202,19 +183,16 @@ public class PipingSpecs
     public async Task I_can_execute_a_command_and_pipe_the_stdout_into_an_async_anonymous_target()
     {
         // Arrange
-        await using var stream = new MemoryStream();
+        using var stream = new MemoryStream();
 
-        var target = PipeTarget.Create(async (origin, cancellationToken) =>
-            // ReSharper disable once AccessToDisposedClosure
-            await origin.CopyToAsync(stream, cancellationToken)
-        );
-
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate binary")
-                .Add("--length").Add(100_000)
-            ) | target;
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath)
+                .WithArguments(["generate binary", "--length", "100000"])
+            | PipeTarget.Create(
+                async (origin, cancellationToken) =>
+                    // ReSharper disable once AccessToDisposedClosure
+                    await origin.CopyToAsync(stream, cancellationToken)
+            );
 
         // Act
         await cmd.ExecuteAsync();
@@ -227,19 +205,15 @@ public class PipingSpecs
     public async Task I_can_execute_a_command_and_pipe_the_stdout_into_a_sync_anonymous_target()
     {
         // Arrange
-        await using var stream = new MemoryStream();
+        using var stream = new MemoryStream();
 
-        var target = PipeTarget.Create(origin =>
-            // ReSharper disable once AccessToDisposedClosure
-            origin.CopyTo(stream)
-        );
-
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate binary")
-                .Add("--length").Add(100_000)
-            ) | target;
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath)
+                .WithArguments(["generate binary", "--length", "100000"])
+            | PipeTarget.Create(origin =>
+                // ReSharper disable once AccessToDisposedClosure
+                origin.CopyTo(stream)
+            );
 
         // Act
         await cmd.ExecuteAsync();
@@ -252,14 +226,11 @@ public class PipingSpecs
     public async Task I_can_execute_a_command_and_pipe_the_stdout_into_a_stream()
     {
         // Arrange
-        await using var stream = new MemoryStream();
+        using var stream = new MemoryStream();
 
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate binary")
-                .Add("--length").Add(100_000)
-            ) | stream;
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath)
+                .WithArguments(["generate binary", "--length", "100000"]) | stream;
 
         // Act
         await cmd.ExecuteAsync();
@@ -274,12 +245,10 @@ public class PipingSpecs
         // Arrange
         using var file = TempFile.Create();
 
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate binary")
-                .Add("--length").Add(100_000)
-            ) | PipeTarget.ToFile(file.Path);
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath)
+                .WithArguments(["generate binary", "--length", "100000"])
+            | PipeTarget.ToFile(file.Path);
 
         // Act
         await cmd.ExecuteAsync();
@@ -295,12 +264,7 @@ public class PipingSpecs
         // Arrange
         var buffer = new StringBuilder();
 
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo")
-                .Add("Hello world!")
-            ) | buffer;
+        var cmd = Cli.Wrap(Dummy.Program.FilePath).WithArguments(["echo", "Hello world!"]) | buffer;
 
         // Act
         await cmd.ExecuteAsync();
@@ -315,18 +279,15 @@ public class PipingSpecs
         // Arrange
         var stdOutLinesCount = 0;
 
-        async Task HandleStdOutAsync(string line)
-        {
-            await Task.Yield();
-            stdOutLinesCount++;
-        }
-
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate text")
-                .Add("--lines").Add(100)
-            ) | HandleStdOutAsync;
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath).WithArguments(["generate text", "--lines", "100"])
+            | (
+                async line =>
+                {
+                    await Task.Yield();
+                    stdOutLinesCount++;
+                }
+            );
 
         // Act
         await cmd.ExecuteAsync();
@@ -341,18 +302,15 @@ public class PipingSpecs
         // Arrange
         var stdOutLinesCount = 0;
 
-        async Task HandleStdOutAsync(string line, CancellationToken cancellationToken = default)
-        {
-            await Task.Delay(1, cancellationToken);
-            stdOutLinesCount++;
-        }
-
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate text")
-                .Add("--lines").Add(100)
-            ) | HandleStdOutAsync;
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath).WithArguments(["generate text", "--lines", "100"])
+            | (
+                async (_, cancellationToken) =>
+                {
+                    await Task.Delay(1, cancellationToken);
+                    stdOutLinesCount++;
+                }
+            );
 
         // Act
         await cmd.ExecuteAsync();
@@ -367,14 +325,9 @@ public class PipingSpecs
         // Arrange
         var stdOutLinesCount = 0;
 
-        void HandleStdOut(string line) => stdOutLinesCount++;
-
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate text")
-                .Add("--lines").Add(100)
-            ) | HandleStdOut;
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath).WithArguments(["generate text", "--lines", "100"])
+            | (_ => stdOutLinesCount++);
 
         // Act
         await cmd.ExecuteAsync();
@@ -387,16 +340,13 @@ public class PipingSpecs
     public async Task I_can_execute_a_command_and_pipe_the_stdout_and_stderr_into_separate_streams()
     {
         // Arrange
-        await using var stdOut = new MemoryStream();
-        await using var stdErr = new MemoryStream();
+        using var stdOut = new MemoryStream();
+        using var stdErr = new MemoryStream();
 
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate binary")
-                .Add("--target").Add("all")
-                .Add("--length").Add(100_000)
-            ) | (stdOut, stdErr);
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath)
+                .WithArguments(["generate binary", "--target", "all", "--length", "100000"])
+            | (stdOut, stdErr);
 
         // Act
         await cmd.ExecuteAsync();
@@ -413,12 +363,10 @@ public class PipingSpecs
         var stdOutBuffer = new StringBuilder();
         var stdErrBuffer = new StringBuilder();
 
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo").Add("Hello world!")
-                .Add("--target").Add("all")
-            ) | (stdOutBuffer, stdErrBuffer);
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath)
+                .WithArguments(["echo", "Hello world!", "--target", "all"])
+            | (stdOutBuffer, stdErrBuffer);
 
         // Act
         await cmd.ExecuteAsync();
@@ -447,13 +395,10 @@ public class PipingSpecs
             stdErrLinesCount++;
         }
 
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate text")
-                .Add("--target").Add("all")
-                .Add("--lines").Add(100)
-            ) | (HandleStdOutAsync, HandleStdErrAsync);
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath)
+                .WithArguments(["generate text", "--target", "all", "--lines", "100"])
+            | (HandleStdOutAsync, HandleStdErrAsync);
 
         // Act
         await cmd.ExecuteAsync();
@@ -482,13 +427,10 @@ public class PipingSpecs
             stdErrLinesCount++;
         }
 
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate text")
-                .Add("--target").Add("all")
-                .Add("--lines").Add(100)
-            ) | (HandleStdOutAsync, HandleStdErrAsync);
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath)
+                .WithArguments(["generate text", "--target", "all", "--lines", "100"])
+            | (HandleStdOutAsync, HandleStdErrAsync);
 
         // Act
         await cmd.ExecuteAsync();
@@ -505,16 +447,10 @@ public class PipingSpecs
         var stdOutLinesCount = 0;
         var stdErrLinesCount = 0;
 
-        void HandleStdOut(string line) => stdOutLinesCount++;
-        void HandleStdErr(string line) => stdErrLinesCount++;
-
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate text")
-                .Add("--target").Add("all")
-                .Add("--lines").Add(100)
-            ) | (HandleStdOut, HandleStdErr);
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath)
+                .WithArguments(["generate text", "--target", "all", "--lines", "100"])
+            | (_ => stdOutLinesCount++, _ => stdErrLinesCount++);
 
         // Act
         await cmd.ExecuteAsync();
@@ -528,22 +464,18 @@ public class PipingSpecs
     public async Task I_can_execute_a_command_and_pipe_the_stdout_into_multiple_targets()
     {
         // Arrange
-        await using var stream1 = new MemoryStream();
-        await using var stream2 = new MemoryStream();
-        await using var stream3 = new MemoryStream();
+        using var stream1 = new MemoryStream();
+        using var stream2 = new MemoryStream();
+        using var stream3 = new MemoryStream();
 
-        var target = PipeTarget.Merge(
-            PipeTarget.ToStream(stream1),
-            PipeTarget.ToStream(stream2),
-            PipeTarget.ToStream(stream3)
-        );
-
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate binary")
-                .Add("--length").Add(100_000)
-            ) | target;
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath)
+                .WithArguments(["generate binary", "--length", "100000"])
+            | PipeTarget.Merge(
+                PipeTarget.ToStream(stream1),
+                PipeTarget.ToStream(stream2),
+                PipeTarget.ToStream(stream3)
+            );
 
         // Act
         await cmd.ExecuteAsync();
@@ -562,17 +494,13 @@ public class PipingSpecs
         // https://github.com/Tyrrrz/CliWrap/issues/212
 
         // Arrange
-        var target = PipeTarget.Merge(
-            PipeTarget.ToStream(Stream.Null),
-            PipeTarget.ToDelegate(_ => throw new Exception("Expected exception."))
-        );
-
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate binary")
-                .Add("--length").Add(100_000)
-            ) | target;
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath)
+                .WithArguments(["generate binary", "--length", "100_000"])
+            | PipeTarget.Merge(
+                PipeTarget.ToStream(Stream.Null),
+                PipeTarget.ToDelegate(_ => throw new Exception("Expected exception."))
+            );
 
         // Act & assert
         var ex = await Assert.ThrowsAnyAsync<Exception>(async () => await cmd.ExecuteAsync());
@@ -583,27 +511,21 @@ public class PipingSpecs
     public async Task I_can_execute_a_command_and_pipe_the_stdout_into_multiple_hierarchical_targets()
     {
         // Arrange
-        await using var stream1 = new MemoryStream();
-        await using var stream2 = new MemoryStream();
-        await using var stream3 = new MemoryStream();
-        await using var stream4 = new MemoryStream();
+        using var stream1 = new MemoryStream();
+        using var stream2 = new MemoryStream();
+        using var stream3 = new MemoryStream();
+        using var stream4 = new MemoryStream();
 
-        var target = PipeTarget.Merge(
-            PipeTarget.ToStream(stream1),
-            PipeTarget.Merge(
-                PipeTarget.ToStream(stream2),
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath)
+                .WithArguments(["generate binary", "--length", "100000"])
+            | PipeTarget.Merge(
+                PipeTarget.ToStream(stream1),
                 PipeTarget.Merge(
-                    PipeTarget.ToStream(stream3),
-                    PipeTarget.ToStream(stream4)
+                    PipeTarget.ToStream(stream2),
+                    PipeTarget.Merge(PipeTarget.ToStream(stream3), PipeTarget.ToStream(stream4))
                 )
-            )
-        );
-
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate binary")
-                .Add("--length").Add(100_000)) | target;
+            );
 
         // Act
         await cmd.ExecuteAsync();
@@ -624,27 +546,33 @@ public class PipingSpecs
         // https://github.com/Tyrrrz/CliWrap/issues/81
 
         // Arrange
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate binary")
-                .Add("--length").Add(1_000_000)
-                // Buffer needs to be >= BufferSizes.Stream to fail
-                .Add("--buffer").Add(100_000)
+        var cmd = Cli.Wrap(Dummy.Program.FilePath)
+            .WithArguments(
+                [
+                    "generate binary",
+                    "--length",
+                    "1000000",
+                    // Buffer needs to be >= BufferSizes.Stream to fail
+                    "--buffer",
+                    "100000",
+                ]
             );
 
         // Act
-        await using var mergedStream1 = new MemoryStream();
-        await using var mergedStream2 = new MemoryStream();
-        await (cmd | PipeTarget.Merge(
+        using var mergedStream1 = new MemoryStream();
+        using var mergedStream2 = new MemoryStream();
+        await (
+            cmd
+            | PipeTarget.Merge(
                 PipeTarget.ToStream(mergedStream1),
-                PipeTarget.ToStream(mergedStream2))
-            ).ExecuteAsync();
+                PipeTarget.ToStream(mergedStream2)
+            )
+        ).ExecuteAsync();
 
         // Assert
 
         // Run without merging to get the expected byte array (random seed is constant)
-        await using var unmergedStream = new MemoryStream();
+        using var unmergedStream = new MemoryStream();
         await (cmd | PipeTarget.ToStream(unmergedStream)).ExecuteAsync();
 
         unmergedStream.Length.Should().Be(1_000_000);
@@ -656,14 +584,11 @@ public class PipingSpecs
     public async Task I_can_execute_a_command_with_buffering_and_also_pipe_the_stdout_into_a_stream()
     {
         // Arrange
-        await using var stream = new MemoryStream();
+        using var stream = new MemoryStream();
 
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate text")
-                .Add("--length").Add(100_000)
-            ) | stream;
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath).WithArguments(["generate text", "--length", "100000"])
+            | stream;
 
         // Act
         var result = await cmd.ExecuteBufferedAsync();
@@ -683,50 +608,45 @@ public class PipingSpecs
 
         // Arrange
         var delegateLines = new List<string>();
-        void HandleStdOut(string line) => delegateLines.Add(line);
 
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate text")
-                .Add("--lines").Add(100)
-            ) | HandleStdOut;
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath).WithArguments(["generate text", "--lines", "100"])
+            | delegateLines.Add;
 
         // Act
         var result = await cmd.ExecuteBufferedAsync();
 
         // Assert
-        delegateLines.Should().Equal(
-            result
-                .StandardOutput
-                .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
-        );
+        delegateLines
+            .Should()
+            .Equal(
+                result.StandardOutput.Split(
+                    Environment.NewLine,
+                    StringSplitOptions.RemoveEmptyEntries
+                )
+            );
     }
 
     [Fact(Timeout = 15000)]
-    public async Task I_can_execute_a_command_and_get_an_error_if_the_pipe_source_throws_an_exception()
+    public async Task I_can_try_to_execute_a_command_and_get_an_error_if_the_pipe_source_throws_an_exception()
     {
         // Arrange
-        var cmd = PipeSource.FromFile("non-existing-file.txt") | Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-            );
+        var cmd =
+            PipeSource.FromFile("non-existing-file.txt")
+            | Cli.Wrap(Dummy.Program.FilePath).WithArguments("echo stdin");
 
         // Act & assert
         await Assert.ThrowsAnyAsync<Exception>(async () => await cmd.ExecuteAsync());
     }
 
     [Fact(Timeout = 15000)]
-    public async Task I_can_execute_a_command_and_get_an_error_if_the_pipe_target_throws_an_exception()
+    public async Task I_can_try_to_execute_a_command_and_get_an_error_if_the_pipe_target_throws_an_exception()
     {
         // Arrange
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate binary")
-                .Add("--length").Add(100_000)
-            ) | PipeTarget.ToFile("non-existing-directory/file.txt");
+        var cmd =
+            Cli.Wrap(Dummy.Program.FilePath)
+                .WithArguments(["generate binary", "--length", "100_000"])
+            | PipeTarget.ToFile("non-existing-directory/file.txt");
 
         // Act & assert
         await Assert.ThrowsAnyAsync<Exception>(async () => await cmd.ExecuteAsync());
@@ -736,11 +656,7 @@ public class PipingSpecs
     public async Task I_can_execute_a_command_and_not_hang_if_the_process_expects_stdin_but_none_is_provided()
     {
         // Arrange
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-            );
+        var cmd = Cli.Wrap(Dummy.Program.FilePath).WithArguments("echo stdin");
 
         // Act
         await cmd.ExecuteAsync();
@@ -750,11 +666,8 @@ public class PipingSpecs
     public async Task I_can_execute_a_command_and_not_hang_if_the_process_expects_stdin_but_empty_data_is_provided()
     {
         // Arrange
-        var cmd = Array.Empty<byte>() | Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-            );
+        var cmd =
+            Array.Empty<byte>() | Cli.Wrap(Dummy.Program.FilePath).WithArguments("echo stdin");
 
         // Act
         await cmd.ExecuteAsync();
@@ -768,24 +681,21 @@ public class PipingSpecs
         // Arrange
         var random = new Random(1234567);
 
-        var source = PipeSource.Create(async (destination, cancellationToken) =>
-        {
-            var buffer = new byte[256];
-            while (true)
-            {
-                random.NextBytes(buffer);
-                await destination.WriteAsync(buffer, cancellationToken);
-            }
+        var cmd =
+            PipeSource.Create(
+                async (destination, cancellationToken) =>
+                {
+                    var buffer = new byte[256];
+                    while (true)
+                    {
+                        random.NextBytes(buffer);
+                        await destination.WriteAsync(buffer, cancellationToken);
+                    }
 
-            // ReSharper disable once FunctionNeverReturns
-        });
-
-        var cmd = source | Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-                .Add("--length").Add(100_000)
-            );
+                    // ReSharper disable once FunctionNeverReturns
+                }
+            )
+            | Cli.Wrap(Dummy.Program.FilePath).WithArguments(["echo stdin", "--length", "100000"]);
 
         // Act & assert
         await cmd.ExecuteAsync();
@@ -797,18 +707,14 @@ public class PipingSpecs
         // https://github.com/Tyrrrz/CliWrap/issues/74
 
         // Arrange
-        var source = PipeSource.Create(async (_, cancellationToken) =>
-        {
-            // Not infinite, but long enough
-            await Task.Delay(TimeSpan.FromSeconds(20), cancellationToken);
-        });
-
-        var cmd = source | Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-                .Add("--length").Add(0)
-            );
+        var cmd =
+            PipeSource.Create(
+                async (_, cancellationToken) =>
+                {
+                    // Not infinite, but long enough
+                    await Task.Delay(TimeSpan.FromSeconds(20), cancellationToken);
+                }
+            ) | Cli.Wrap(Dummy.Program.FilePath).WithArguments(["echo stdin", "--length", "0"]);
 
         // Act & assert
         await cmd.ExecuteAsync();
@@ -820,17 +726,12 @@ public class PipingSpecs
         // https://github.com/Tyrrrz/CliWrap/issues/74
 
         // Arrange
-        var source = PipeSource.Create(async (_, _) =>
-            // Not infinite, but long enough
-            await Task.Delay(TimeSpan.FromSeconds(20), CancellationToken.None)
-        );
-
-        var cmd = source | Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-                .Add("--length").Add(0)
-            );
+        var cmd =
+            PipeSource.Create(
+                async (_, _) =>
+                    // Not infinite, but long enough
+                    await Task.Delay(TimeSpan.FromSeconds(20), CancellationToken.None)
+            ) | Cli.Wrap(Dummy.Program.FilePath).WithArguments(["echo stdin", "--length", "0"]);
 
         // Act & assert
         await cmd.ExecuteAsync();
@@ -845,25 +746,22 @@ public class PipingSpecs
         var random = new Random(1234567);
         var bytesRemaining = 100_000;
 
-        var source = PipeSource.Create(async (destination, cancellationToken) =>
-        {
-            var buffer = new byte[256];
-            while (bytesRemaining > 0)
-            {
-                random.NextBytes(buffer);
+        var cmd =
+            PipeSource.Create(
+                async (destination, cancellationToken) =>
+                {
+                    var buffer = new byte[256];
+                    while (bytesRemaining > 0)
+                    {
+                        random.NextBytes(buffer);
 
-                var count = Math.Min(bytesRemaining, buffer.Length);
-                await destination.WriteAsync(buffer.AsMemory()[..count], cancellationToken);
+                        var count = Math.Min(bytesRemaining, buffer.Length);
+                        await destination.WriteAsync(buffer.AsMemory()[..count], cancellationToken);
 
-                bytesRemaining -= count;
-            }
-        });
-
-        var cmd = source | Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("echo stdin")
-            );
+                        bytesRemaining -= count;
+                    }
+                }
+            ) | Cli.Wrap(Dummy.Program.FilePath).WithArguments("echo stdin");
 
         // Act & assert
         await cmd.ExecuteAsync();

@@ -35,7 +35,8 @@ internal class SimplexStream : Stream
         byte[] buffer,
         int offset,
         int count,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
 
@@ -58,15 +59,15 @@ internal class SimplexStream : Stream
         byte[] buffer,
         int offset,
         int count,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         await _readLock.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         var length = Math.Min(count, _sharedBufferBytes - _sharedBufferBytesRead);
 
         _sharedBuffer
-            .Memory
-            .Slice(_sharedBufferBytesRead, length)
+            .Memory.Slice(_sharedBufferBytesRead, length)
             .CopyTo(buffer.AsMemory(offset, length));
 
         _sharedBufferBytesRead += length;
@@ -89,7 +90,7 @@ internal class SimplexStream : Stream
 
     public async Task ReportCompletionAsync(CancellationToken cancellationToken = default) =>
         // Write an empty buffer that will make ReadAsync(...) return 0, which signifies the end of stream
-        await WriteAsync(Array.Empty<byte>(), 0, 0, cancellationToken).ConfigureAwait(false);
+        await WriteAsync([], 0, 0, cancellationToken).ConfigureAwait(false);
 
     protected override void Dispose(bool disposing)
     {
